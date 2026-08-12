@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="bn" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>বিদ্যুৎ লাইভ - Bangladesh Power Grid Status</title>
+    
+    <!-- Google Fonts: Noto Sans Bengali -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS for Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Noto Sans Bengali', 'sans-serif'],
+                    },
+                    colors: {
+                        // Seagrass Palette
+                        seagrass: {
+                            50: '#EEF7F5',
+                            100: '#DDEEEB',
+                            200: '#BADED6',
+                            300: '#98CDC2',
+                            400: '#75BDAD',
+                            500: '#53AC99',
+                            600: '#428A7A',
+                            700: '#32675C',
+                            800: '#21453D',
+                            900: '#11221F',
+                            950: '#0C1815'
+                        },
+                        // Tinted neutrals to avoid pure grays
+                        neutral: {
+                            50: '#F4F7F6',
+                            100: '#E6EBE9',
+                            200: '#CDD6D4',
+                            300: '#B0BCB9',
+                            400: '#909F9C',
+                            500: '#73837F',
+                            600: '#586562',
+                            700: '#485250',
+                            800: '#3A4241',
+                            900: '#313736',
+                            950: '#1A1E1D'
+                        },
+                        // Semantic UI colors
+                        live: '#ef4444',     // Red for load-shedding
+                        active: '#10b981',   // Green for power available
+                    },
+                    transitionTimingFunction: {
+                        'strict': 'cubic-bezier(0.4, 0, 0.2, 1)',
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        :root {
+            --map-tiles-filter: brightness(1) invert(0);
+        }
+        .dark {
+            /* High contrast, dark blue-ish tint map for dark mode */
+            --map-tiles-filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+        }
+        
+        body, html {
+            height: 100%;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        /* Refined Custom Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #CDD6D4; border-radius: 4px; }
+        .dark ::-webkit-scrollbar-thumb { background: #3A4241; }
+        ::-webkit-scrollbar-thumb:hover { background: #909F9C; }
+        .dark ::-webkit-scrollbar-thumb:hover { background: #586562; }
+
+        /* Map styling overrides */
+        #map { 
+            background-color: #F4F7F6; 
+        }
+        .dark #map { 
+            background-color: #1A1E1D; 
+        }
+        .leaflet-layer,
+        .leaflet-control-zoom-in,
+        .leaflet-control-zoom-out,
+        .leaflet-control-attribution {
+            filter: var(--map-tiles-filter);
+        }
+        .leaflet-container { font-family: 'Noto Sans Bengali', sans-serif; }
+        
+        /* Minimalist Map Popups */
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+            background-color: #ffffff;
+            color: #1A1E1D;
+            border: 1px solid #E6EBE9;
+            box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+        .dark .leaflet-popup-content-wrapper, .dark .leaflet-popup-tip {
+            background-color: #1A1E1D;
+            color: #F4F7F6;
+            border: 1px solid #3A4241;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+        .leaflet-popup-content { margin: 12px; font-size: 13px; line-height: 1.5; }
+        .leaflet-popup-close-button { display: none !important; }
+
+        /* Marker Styles - Clean dots */
+        .marker-base {
+            border-radius: 50%;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .marker-online {
+            background: #10b981;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+        }
+        .marker-offline {
+            background: #ef4444;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+        }
+        .dark .marker-online { border-color: #1A1E1D; }
+        .dark .marker-offline { border-color: #1A1E1D; }
+        
+        .pulse-anim {
+            animation: pulse-ring 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(1); opacity: 0.8; }
+            100% { transform: scale(2.5); opacity: 0; }
+        }
+
+        /* Typography Gradients */
+        .text-gradient {
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-image: linear-gradient(90deg, #32675C, #53AC99);
+        }
+        .dark .text-gradient {
+            background-image: linear-gradient(90deg, #75BDAD, #BADED6);
+        }
+    </style>
+</head>
+<body class="bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 transition-colors duration-300 ease-strict selection:bg-seagrass-500 selection:text-white flex flex-col" x-data="bidyutApp()">
+
+    <header class="h-16 flex-shrink-0 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex items-center justify-between px-4 lg:px-6 z-20">
+        <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded bg-seagrass-500 flex items-center justify-center">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            </div>
+            <h1 class="text-lg font-bold tracking-tight">বিদ্যুৎ <span class="text-seagrass-600 dark:text-seagrass-400">লাইভ</span></h1>
+        </div>
+
+        <button @click="toggleTheme()" class="p-2 -mr-2 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors text-neutral-500" aria-label="Toggle Theme">
+            <svg x-show="!isDark" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+            <svg x-show="isDark" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+        </button>
+    </header>
+
+    <main class="flex-1 flex flex-col lg:flex-row min-h-0 relative overflow-hidden">
+        
+        <!-- Mobile: Map is top half. Desktop: Map is right side full height -->
+        <div class="w-full h-[45vh] md:h-[50vh] flex-shrink-0 lg:flex-shrink lg:h-full lg:flex-1 relative z-10 order-first lg:order-last border-b lg:border-b-0 lg:border-l border-neutral-200 dark:border-neutral-800">
+            <div id="map" class="absolute inset-0 z-0"></div>
+            
+            <!-- Floating Map Legend -->
+            <div class="absolute bottom-4 left-4 z-[400] bg-white/90 dark:bg-neutral-900/90 backdrop-blur-md px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-800 shadow-sm flex items-center gap-4 pointer-events-none">
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-live ring-2 ring-live/20"></span>
+                    <span class="text-xs font-medium text-neutral-700 dark:text-neutral-300">লোডশেডিং</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-active ring-2 ring-active/20"></span>
+                    <span class="text-xs font-medium text-neutral-700 dark:text-neutral-300">বিদ্যুৎ আছে</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar / Data Panel -->
+        <aside class="w-full lg:w-[420px] xl:w-[480px] h-full flex flex-col bg-white dark:bg-neutral-950 z-20 flex-shrink-0">
+            
+            <!-- Scrollable top content of sidebar -->
+            <div class="flex-shrink-0 p-4 lg:p-6 lg:pb-0 flex flex-col gap-6 lg:gap-8 overflow-y-visible">
+                
+                <!-- Hero & Disclaimer -->
+                <div class="flex flex-col gap-3">
+                    <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200/50 dark:border-amber-900/50 w-fit">
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-500">Fun Project</span>
+                        <span class="text-xs text-amber-600 dark:text-amber-400 font-medium">বিদ্যুৎ সংকট নিয়ে নিছকই একটি হিউমার।</span>
+                    </div>
+                    
+                    <h2 class="text-3xl lg:text-4xl font-extrabold tracking-tight leading-tight">
+                        দেশের <span class="text-gradient">রিয়েল-টাইম</span> <br/>লোডশেডিং স্ট্যাটাস
+                    </h2>
+                    <p class="text-sm text-neutral-500 dark:text-neutral-400 max-w-sm leading-relaxed">
+                        ২০২৬ সালের চরম বিদ্যুৎ সংকটে দেশের সার্বিক পরিস্থিতি। ম্যাপে এলাকা খুঁজুন এবং লাইভ স্ট্যাটাস দেখুন।
+                    </p>
+                </div>
+
+                <!-- Search Input -->
+                <div class="relative group">
+                    <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                        <svg class="h-4 w-4 text-neutral-400 group-focus-within:text-seagrass-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    </div>
+                    <input 
+                        type="text" 
+                        x-model.debounce.300ms="searchQuery"
+                        placeholder="যেমন: গুলশান, মিরপুর, আগ্রাবাদ..." 
+                        class="block w-full pl-10 pr-4 py-2.5 text-sm bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-seagrass-500 focus:border-seagrass-500 transition-all"
+                    >
+                </div>
+
+                <!-- Impeccable Stats (No nested cards, clean typography) -->
+                <div class="grid grid-cols-2 gap-4 pb-2 border-b border-neutral-100 dark:border-neutral-800/50">
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-[11px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest flex items-center gap-1.5">
+                            <span class="w-1.5 h-1.5 rounded-full bg-live"></span> বিদ্যুৎ নেই
+                        </span>
+                        <div class="flex items-baseline gap-1.5 mt-1">
+                            <span class="text-3xl font-extrabold text-neutral-900 dark:text-white" x-text="stats.offline">0</span>
+                            <span class="text-xs font-medium text-neutral-500">এলাকা</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-[11px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest flex items-center gap-1.5">
+                            <span class="w-1.5 h-1.5 rounded-full bg-active"></span> বিদ্যুৎ আছে
+                        </span>
+                        <div class="flex items-baseline gap-1.5 mt-1">
+                            <span class="text-3xl font-extrabold text-neutral-900 dark:text-white" x-text="stats.online">0</span>
+                            <span class="text-xs font-medium text-neutral-500">এলাকা</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabs Header -->
+            <div class="flex-shrink-0 flex gap-6 px-4 lg:px-6 pt-2 border-b border-neutral-200 dark:border-neutral-800">
+                <button 
+                    @click="activeTab = 'feed'"
+                    class="pb-3 text-sm font-semibold transition-colors relative"
+                    :class="activeTab === 'feed' ? 'text-seagrass-600 dark:text-seagrass-400' : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'"
+                >
+                    লাইভ আপডেট
+                    <div x-show="activeTab === 'feed'" class="absolute bottom-0 left-0 w-full h-0.5 bg-seagrass-500 rounded-t-full"></div>
+                </button>
+                <button 
+                    @click="activeTab = 'directory'"
+                    class="pb-3 text-sm font-semibold transition-colors relative flex items-center gap-2"
+                    :class="activeTab === 'directory' ? 'text-seagrass-600 dark:text-seagrass-400' : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'"
+                >
+                    এলাকা ডিরেক্টরি
+                    <span class="text-[10px] py-0.5 px-1.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-500 font-mono" x-text="filteredCount"></span>
+                    <div x-show="activeTab === 'directory'" class="absolute bottom-0 left-0 w-full h-0.5 bg-seagrass-500 rounded-t-full"></div>
+                </button>
+            </div>
+
+            <!-- Scrollable Tab Content Area -->
+            <div class="flex-1 overflow-y-auto bg-neutral-50/50 dark:bg-neutral-900/20 relative">
+                
+                <!-- Live Feed Tab -->
+                <div x-show="activeTab === 'feed'" class="flex flex-col p-4 lg:p-6 gap-5 min-h-full">
+                    <template x-for="log in liveFeed" :key="log.id">
+                        <div class="flex gap-3 items-start"
+                             x-transition:enter="transition-all duration-500 ease-out"
+                             x-transition:enter-start="opacity-0 -translate-y-2"
+                             x-transition:enter-end="opacity-100 translate-y-0">
+                            <div class="mt-1 flex-shrink-0 relative">
+                                <span class="absolute inline-flex h-2.5 w-2.5 rounded-full opacity-40 animate-ping" :class="log.status ? 'bg-active' : 'bg-live'"></span>
+                                <div class="relative w-2.5 h-2.5 rounded-full" :class="log.status ? 'bg-active' : 'bg-live'"></div>
+                            </div>
+                            <div class="flex flex-col -mt-1">
+                                <p class="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed" x-html="log.message"></p>
+                                <span class="text-[10px] text-neutral-400 font-mono mt-0.5" x-text="log.time"></span>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="liveFeed.length === 0" class="text-sm text-neutral-400 italic text-center py-4">অপেক্ষা করুন, ডাটা আসছে...</div>
+                </div>
+
+                <!-- Directory Tab -->
+                <div x-show="activeTab === 'directory'" class="flex flex-col p-2 lg:p-4 min-h-full">
+                    <template x-for="division in filteredDivisions" :key="division.name">
+                        <div class="mb-6">
+                            <!-- Division Header -->
+                            <div class="sticky top-0 bg-neutral-50/90 dark:bg-neutral-950/90 backdrop-blur z-10 px-3 py-2 flex items-center justify-between">
+                                <h4 class="text-xs font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest" x-text="division.name"></h4>
+                                <span class="text-[10px] text-neutral-400 font-medium" x-text="`${division.areas.length} টি এলাকা`"></span>
+                            </div>
+                            
+                            <div class="flex flex-col mt-1">
+                                <!-- Limit rendered items for massive performance boost -->
+                                <template x-for="loc in division.areas.slice(0, searchQuery ? 100 : 15)" :key="loc.id">
+                                    <button 
+                                        @click="focusMapOn(loc)"
+                                        class="text-left flex items-center justify-between px-3 py-2.5 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800/50 transition-colors group"
+                                    >
+                                        <div class="flex flex-col">
+                                            <span class="text-sm font-medium text-neutral-800 dark:text-neutral-200 group-hover:text-seagrass-600 dark:group-hover:text-seagrass-400 transition-colors" x-text="loc.name"></span>
+                                            <span class="text-[11px] text-neutral-500" x-text="loc.district"></span>
+                                        </div>
+                                        <div class="flex items-center gap-1.5">
+                                            <span class="w-1.5 h-1.5 rounded-full" :class="loc.status ? 'bg-active' : 'bg-live'"></span>
+                                            <span class="text-[10px] font-medium"
+                                                  :class="loc.status ? 'text-active' : 'text-live'"
+                                                  x-text="loc.status ? 'আছে' : 'নেই'">
+                                            </span>
+                                        </div>
+                                    </button>
+                                </template>
+                                
+                                <div x-show="division.areas.length > (searchQuery ? 100 : 15)" class="px-3 py-2 text-[11px] text-neutral-400 italic">
+                                    আরও এলাকা দেখতে নির্দিষ্ট নাম লিখে সার্চ করুন...
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                    
+                    <div x-show="filteredCount === 0" class="text-center py-8 text-neutral-500 text-sm">
+                        কোনো এলাকা পাওয়া যায়নি।
+                    </div>
+                </div>
+                
+            </div>
+        </aside>
+    </main>
+
+    <script>
+        // Core bounding box to ensure NO data leaks outside Bangladesh
+        const bdBounds = { n: 26.634, s: 20.738, e: 92.673, w: 88.010 };
+        
+        // Custom Division Rank logic for directory sorting
+        const divisionRank = {
+            'ঢাকা': 1,
+            'বরিশাল': 2,
+            'চট্টগ্রাম': 3,
+            'সিলেট': 4,
+            'খুলনা': 5,
+            'রাজশাহী': 6,
+            'রংপুর': 7,
+            'ময়মনসিংহ': 8
+        };
+
+        // Base popular anchors
+        const preciseAreas = [
+            { n: 'গুলশান', d: 'ঢাকা', div: 'ঢাকা', lat: 23.7925, lng: 90.4078 },
+            { n: 'ধানমন্ডি', d: 'ঢাকা', div: 'ঢাকা', lat: 23.7461, lng: 90.3742 },
+            { n: 'মিরপুর', d: 'ঢাকা', div: 'ঢাকা', lat: 23.8069, lng: 90.3687 },
+            { n: 'উত্তরা', d: 'ঢাকা', div: 'ঢাকা', lat: 23.8759, lng: 90.3976 },
+            { n: 'মোহাম্মদপুর', d: 'ঢাকা', div: 'ঢাকা', lat: 23.7658, lng: 90.3584 },
+            { n: 'আগ্রাবাদ', d: 'চট্টগ্রাম', div: 'চট্টগ্রাম', lat: 22.3242, lng: 91.8107 },
+            { n: 'হালিশহর', d: 'চট্টগ্রাম', div: 'চট্টগ্রাম', lat: 22.3330, lng: 91.7770 },
+            { n: 'চকবাজার', d: 'চট্টগ্রাম', div: 'চট্টগ্রাম', lat: 22.3486, lng: 91.8340 },
+            { n: 'জিন্দাবাজার', d: 'সিলেট', div: 'সিলেট', lat: 24.8967, lng: 91.8698 },
+            { n: 'আম্বরখানা', d: 'সিলেট', div: 'সিলেট', lat: 24.9048, lng: 91.8708 },
+            { n: 'সাহেব বাজার', d: 'রাজশাহী', div: 'রাজশাহী', lat: 24.3670, lng: 88.5997 },
+            { n: 'শিববাড়ী মোড়', d: 'খুলনা', div: 'খুলনা', lat: 22.8197, lng: 89.5539 },
+            { n: 'সদর রোড', d: 'বরিশাল', div: 'বরিশাল', lat: 22.7022, lng: 90.3701 },
+            { n: 'রূপাতলী', d: 'বরিশাল', div: 'বরিশাল', lat: 22.6823, lng: 90.3540 },
+            { n: 'মঠবাড়িয়া', d: 'পিরোজপুর', div: 'বরিশাল', lat: 22.2882, lng: 89.9620 },
+            { n: 'জাহাজ কোম্পানি মোড়', d: 'রংপুর', div: 'রংপুর', lat: 25.7505, lng: 89.2483 },
+            { n: 'গাঙ্গিনার পাড়', d: 'ময়মনসিংহ', div: 'ময়মনসিংহ', lat: 24.7578, lng: 90.4072 }
+        ];
+
+        // List of specific realistic area names to randomly assign to districts
+        const realisticAreaNames = [
+            'সদর', 'নিউ মার্কেট', 'ক্যান্টনমেন্ট', 'রেলওয়ে কলোনি', 'হাউজিং এস্টেট', 
+            'কলেজ রোড', 'স্টেডিয়াম পাড়া', 'পৌরসভা এলাকা', 'বাস স্ট্যান্ড', 'উপজেলা সদর',
+            'বাজার এলাকা', 'শিল্প এলাকা', 'পুরাতন বাজার', 'নতুন বাজার', 'হাসপাতাল রোড',
+            'থানা রোড', 'স্কুল পাড়া', 'মসজিদ মহল্লা', 'উত্তর পাড়া', 'দক্ষিণ পাড়া',
+            'পূর্ব পাড়া', 'পশ্চিম পাড়া', 'মধ্য পাড়া', 'মাঝিপাড়া', 'মোল্লাপাড়া',
+            'তালুকদার পাড়া', 'বড় বাজার', 'ছোট বাজার', 'বাইপাস রোড', 'হাইওয়ে সংলগ্ন',
+            'নদীর পাড়', 'ব্রিজ সংলগ্ন', 'আবাসিক এলাকা', 'ভিআইপি রোড', 'ফায়ার সার্ভিস রোড',
+            'ডিবি রোড', 'জেল রোড', 'পুলিশ লাইনস', 'সার্কিট হাউজ এলাকা', 'ডিসি অফিস এলাকা'
+        ];
+
+        // Comprehensive District list to fill the entire country map evenly
+        const allDistricts = [
+            {d: 'পঞ্চগড়', div: 'রংপুর', lat: 26.3, lng: 88.5}, {d: 'ঠাকুরগাঁও', div: 'রংপুর', lat: 26.0, lng: 88.4},
+            {d: 'দিনাজপুর', div: 'রংপুর', lat: 25.6, lng: 88.6}, {d: 'রংপুর', div: 'রংপুর', lat: 25.7, lng: 89.2},
+            {d: 'কুড়িগ্রাম', div: 'রংপুর', lat: 25.8, lng: 89.6}, {d: 'বগুড়া', div: 'রাজশাহী', lat: 24.8, lng: 89.3},
+            {d: 'রাজশাহী', div: 'রাজশাহী', lat: 24.3, lng: 88.6}, {d: 'নওগাঁ', div: 'রাজশাহী', lat: 24.8, lng: 88.9},
+            {d: 'নাটোর', div: 'রাজশাহী', lat: 24.4, lng: 89.0}, {d: 'পাবনা', div: 'রাজশাহী', lat: 24.0, lng: 89.2},
+            {d: 'সিরাজগঞ্জ', div: 'রাজশাহী', lat: 24.4, lng: 89.7}, {d: 'টাঙ্গাইল', div: 'ঢাকা', lat: 24.2, lng: 89.9},
+            {d: 'ময়মনসিংহ', div: 'ময়মনসিংহ', lat: 24.7, lng: 90.4}, {d: 'শেরপুর', div: 'ময়মনসিংহ', lat: 25.0, lng: 90.0},
+            {d: 'নেত্রকোনা', div: 'ময়মনসিংহ', lat: 24.8, lng: 90.7}, {d: 'কিশোরগঞ্জ', div: 'ঢাকা', lat: 24.4, lng: 90.9},
+            {d: 'সুনামগঞ্জ', div: 'সিলেট', lat: 25.0, lng: 91.4}, {d: 'সিলেট', div: 'সিলেট', lat: 24.9, lng: 91.8},
+            {d: 'মৌলভীবাজার', div: 'সিলেট', lat: 24.4, lng: 91.7}, {d: 'হবিগঞ্জ', div: 'সিলেট', lat: 24.3, lng: 91.4},
+            {d: 'ব্রাহ্মণবাড়িয়া', div: 'চট্টগ্রাম', lat: 23.9, lng: 91.1}, {d: 'কুমিল্লা', div: 'চট্টগ্রাম', lat: 23.4, lng: 91.1},
+            {d: 'চাঁদপুর', div: 'চট্টগ্রাম', lat: 23.2, lng: 90.6}, {d: 'নোয়াখালী', div: 'চট্টগ্রাম', lat: 22.8, lng: 91.1},
+            {d: 'ফেনী', div: 'চট্টগ্রাম', lat: 23.0, lng: 91.4}, {d: 'লক্ষ্মীপুর', div: 'চট্টগ্রাম', lat: 22.9, lng: 90.8},
+            {d: 'চট্টগ্রাম', div: 'চট্টগ্রাম', lat: 22.3, lng: 91.8}, {d: 'কক্সবাজার', div: 'চট্টগ্রাম', lat: 21.4, lng: 92.0},
+            {d: 'রাঙামাটি', div: 'চট্টগ্রাম', lat: 22.6, lng: 92.1}, {d: 'খাগড়াছড়ি', div: 'চট্টগ্রাম', lat: 23.1, lng: 91.9},
+            {d: 'বান্দরবান', div: 'চট্টগ্রাম', lat: 22.2, lng: 92.2}, {d: 'ঢাকা', div: 'ঢাকা', lat: 23.7, lng: 90.4},
+            {d: 'গাজীপুর', div: 'ঢাকা', lat: 24.0, lng: 90.4}, {d: 'নারায়ণগঞ্জ', div: 'ঢাকা', lat: 23.6, lng: 90.5},
+            {d: 'মুন্সীগঞ্জ', div: 'ঢাকা', lat: 23.5, lng: 90.5}, {d: 'মানিকগঞ্জ', div: 'ঢাকা', lat: 23.8, lng: 90.0},
+            {d: 'ফরিদপুর', div: 'ঢাকা', lat: 23.6, lng: 89.8}, {d: 'মাদারীপুর', div: 'ঢাকা', lat: 23.1, lng: 90.1},
+            {d: 'শরীয়তপুর', div: 'ঢাকা', lat: 23.2, lng: 90.3}, {d: 'গোপালগঞ্জ', div: 'ঢাকা', lat: 23.0, lng: 89.8},
+            {d: 'বরিশাল', div: 'বরিশাল', lat: 22.7, lng: 90.3}, {d: 'ভোলা', div: 'বরিশাল', lat: 22.1, lng: 90.7},
+            {d: 'পটুয়াখালী', div: 'বরিশাল', lat: 22.3, lng: 90.3}, {d: 'বরগুনা', div: 'বরিশাল', lat: 22.1, lng: 90.1},
+            {d: 'পিরোজপুর', div: 'বরিশাল', lat: 22.5, lng: 89.9}, {d: 'ঝালকাঠি', div: 'বরিশাল', lat: 22.6, lng: 90.2},
+            {d: 'খুলনা', div: 'খুলনা', lat: 22.8, lng: 89.5}, {d: 'বাগেরহাট', div: 'খুলনা', lat: 22.6, lng: 89.7},
+            {d: 'সাতক্ষীরা', div: 'খুলনা', lat: 22.7, lng: 89.0}, {d: 'যশোর', div: 'খুলনা', lat: 23.1, lng: 89.2},
+            {d: 'নড়াইল', div: 'খুলনা', lat: 23.1, lng: 89.5}, {d: 'মাগুরা', div: 'খুলনা', lat: 23.4, lng: 89.4},
+            {d: 'ঝিনাইদহ', div: 'খুলনা', lat: 23.5, lng: 89.1}, {d: 'চুয়াডাঙ্গা', div: 'খুলনা', lat: 23.6, lng: 88.8},
+            {d: 'মেহেরপুর', div: 'খুলনা', lat: 23.7, lng: 88.6}, {d: 'কুষ্টিয়া', div: 'খুলনা', lat: 23.9, lng: 89.1}
+        ];
+
+        function generateRealisticLocations(totalCount) {
+            const locs = [];
+            let id = 1;
+            
+            // Generate exact anchors first
+            preciseAreas.forEach(s => {
+                locs.push({
+                    id: id++, name: s.n, district: s.d, division: s.div,
+                    lat: s.lat, lng: s.lng, 
+                    status: Math.random() > 0.98 // 98% chance of Load shedding
+                });
+            });
+
+            const remaining = totalCount - locs.length;
+
+            for (let i = 0; i < remaining; i++) {
+                // Pick a base anchor randomly from ALL districts to ensure map is full
+                const anchor = allDistricts[Math.floor(Math.random() * allDistricts.length)];
+                
+                // Increase radius up to ~25km (approx 0.25 degrees) for wider spread to fill gaps
+                const r = 0.25 * Math.sqrt(Math.random());
+                const theta = Math.random() * 2 * Math.PI;
+                const latOffset = r * Math.cos(theta);
+                const lngOffset = r * Math.sin(theta);
+                
+                // Select a realistic area name modifier
+                const areaModifier = realisticAreaNames[Math.floor(Math.random() * realisticAreaNames.length)];
+                
+                let areaName = '';
+                if (Math.random() > 0.5) {
+                    areaName = `${anchor.d} ${areaModifier}`;
+                } else {
+                    areaName = `${anchor.d} ${areaModifier}`;
+                }
+
+                // Simulate local place names
+                const prefixes = ['শ্রী', 'রাম', 'শিব', 'কালী', 'দুর্গা', 'নবী', 'রহমত', 'ফজল', 'করিম', 'রহিম', 'খাঁ', 'মীর', 'সৈয়দ', 'শেখ', 'কাজল', 'নীল', 'লাল', 'সবুজ', 'সোনার', 'রূপার'];
+                const suffixes = ['পুর', 'গঞ্জ', 'নগর', 'দিয়া', 'খালী', 'তলা', 'বাড়ী', 'হাট', 'বাজার', 'গ্রাম', 'কান্দি', 'চর', 'দ্বীপ', 'টেক', 'বাগ', 'বন', 'পাহাড়', 'তলী'];
+                
+                if (Math.random() > 0.7) {
+                     const randomPrefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+                     const randomSuffix = suffixes[Math.floor(Math.random() * suffixes.length)];
+                     areaName = randomPrefix + randomSuffix;
+                }
+
+                locs.push({
+                    id: id++,
+                    name: areaName,
+                    district: anchor.d,
+                    division: anchor.div,
+                    lat: anchor.lat + latOffset,
+                    lng: anchor.lng + lngOffset,
+                    status: Math.random() > 0.96 // Huge panic: 96% Load Shedding reality check
+                });
+            }
+            
+            // Sort primarily by custom division rank, then district, then name
+            return locs.sort((a,b) => {
+                const rankA = divisionRank[a.division] || 99;
+                const rankB = divisionRank[b.division] || 99;
+                if (rankA !== rankB) return rankA - rankB;
+                
+                if(a.district !== b.district) return a.district.localeCompare(b.district);
+                return a.name.localeCompare(b.name);
+            });
+        }
+
+        // Increase total locations significantly to flood the map
+        const appData = generateRealisticLocations(1500);
+
+        function bidyutApp() {
+            return {
+                isDark: false,
+                activeTab: 'feed', // 'feed' or 'directory'
+                searchQuery: '',
+                locations: appData,
+                liveFeed: [],
+                logIdCounter: 1,
+                map: null,
+                markersMap: {},
+                isMapAnimating: false,
+                
+                init() {
+                    // Theme initialization
+                    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                        this.isDark = true;
+                    } else {
+                        this.isDark = false;
+                    }
+                    this.applyTheme();
+
+                    this.$nextTick(() => {
+                        this.initMap();
+                        
+                        // Populate initial feed
+                        const offlineExamples = this.locations.filter(l => !l.status).slice(0, 4);
+                        const onlineExamples = this.locations.filter(l => l.status).slice(0, 1);
+                        [...offlineExamples, ...onlineExamples].sort(() => Math.random() - 0.5).forEach(loc => this.addLog(loc, loc.status));
+
+                        // Event simulation loop (every 3-5 seconds)
+                        setInterval(() => this.simulateGridEvent(), 4000);
+                        
+                        window.addEventListener('resize', () => {
+                            if (this.map) this.map.invalidateSize();
+                        });
+                    });
+                    
+                    this.$watch('searchQuery', () => {
+                        this.updateMapMarkersVisibility();
+                        // Automatically switch to directory tab on search for better UX
+                        if(this.searchQuery.length > 0 && this.activeTab !== 'directory') {
+                            this.activeTab = 'directory';
+                        }
+                    });
+
+                    this.$watch('activeTab', () => {
+                         // Fix map size glitch when tab UI changes DOM layout on mobile
+                         setTimeout(() => { if (this.map) this.map.invalidateSize(); }, 50);
+                    });
+                },
+
+                toggleTheme() {
+                    this.isDark = !this.isDark;
+                    localStorage.theme = this.isDark ? 'dark' : 'light';
+                    this.applyTheme();
+                },
+
+                applyTheme() {
+                    if (this.isDark) document.documentElement.classList.add('dark');
+                    else document.documentElement.classList.remove('dark');
+                },
+
+                initMap() {
+                    // preferCanvas: true makes rendering 1500+ markers blazingly fast
+                    this.map = L.map('map', {
+                        center: [23.6850, 90.3563],
+                        zoom: 7,
+                        zoomControl: false,
+                        attributionControl: false,
+                        preferCanvas: true 
+                    });
+
+                    L.control.zoom({ position: 'topright' }).addTo(this.map);
+
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                        subdomains: 'abcd',
+                        maxZoom: 14,
+                        minZoom: 6
+                    }).addTo(this.map);
+
+                    this.map.on('movestart', () => this.isMapAnimating = true);
+                    this.map.on('moveend', () => this.isMapAnimating = false);
+                    this.map.on('zoomstart', () => this.isMapAnimating = true);
+                    this.map.on('zoomend', () => this.isMapAnimating = false);
+
+                    this.renderAllMarkers();
+
+                    setTimeout(() => { if (this.map) this.map.invalidateSize(); }, 600);
+                },
+
+                getMarkerStyle(status) {
+                    return {
+                        radius: 4,
+                        fillColor: status ? '#10b981' : '#ef4444',
+                        color: this.isDark ? '#1A1E1D' : '#ffffff',
+                        weight: 1.5,
+                        opacity: 1,
+                        fillOpacity: 0.9
+                    };
+                },
+
+                renderAllMarkers() {
+                    this.locations.forEach(loc => {
+                        // Use circleMarker instead of divIcon for Canvas performance
+                        const marker = L.circleMarker([loc.lat, loc.lng], this.getMarkerStyle(loc.status)).addTo(this.map);
+
+                        const statusText = loc.status 
+                            ? '<span style="color:#10b981;font-weight:600;">বিদ্যুৎ আছে</span>' 
+                            : '<span style="color:#ef4444;font-weight:600;">লোডশেডিং</span>';
+                            
+                        marker.bindPopup(`
+                            <div style="font-family:'Noto Sans Bengali', sans-serif;">
+                                <strong style="font-size:14px;">${loc.name}</strong><br>
+                                <span style="color:var(--tw-colors-neutral-500); font-size:12px;">${loc.district}, ${loc.division}</span><br>
+                                <div style="margin-top:4px;">অবস্থা: ${statusText}</div>
+                            </div>
+                        `);
+                        
+                        this.markersMap[loc.id] = marker;
+                    });
+                },
+
+                updateMapMarkersVisibility() {
+                    const q = this.searchQuery.toLowerCase().trim();
+                    this.locations.forEach(loc => {
+                        const marker = this.markersMap[loc.id];
+                        if (!marker) return;
+                        
+                        const isMatch = q === '' || 
+                                        loc.name.toLowerCase().includes(q) || 
+                                        loc.district.toLowerCase().includes(q) || 
+                                        loc.division.toLowerCase().includes(q);
+                                        
+                        if (isMatch) {
+                            if (!this.map.hasLayer(marker)) this.map.addLayer(marker);
+                        } else {
+                            if (this.map.hasLayer(marker)) this.map.removeLayer(marker);
+                        }
+                    });
+                },
+
+                focusMapOn(loc) {
+                    // Mobile behavior: Scroll to top so map is visible
+                    if (window.innerWidth < 1024) {
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                    
+                    this.map.flyTo([loc.lat, loc.lng], 13, {
+                        duration: 1,
+                        easeLinearity: 0.25
+                    });
+                    const marker = this.markersMap[loc.id];
+                    if (marker) {
+                        setTimeout(() => marker.openPopup(), 1000);
+                    }
+                },
+
+                get stats() {
+                    let online = 0; let offline = 0;
+                    for (let i = 0; i < this.locations.length; i++) {
+                        if (this.locations[i].status) online++; else offline++;
+                    }
+                    return { online, offline };
+                },
+
+                get filteredDivisions() {
+                    const q = this.searchQuery.toLowerCase().trim();
+                    const groups = {};
+                    
+                    this.locations.forEach(loc => {
+                        const isMatch = q === '' || 
+                                        loc.name.toLowerCase().includes(q) || 
+                                        loc.district.toLowerCase().includes(q) || 
+                                        loc.division.toLowerCase().includes(q);
+                                        
+                        if (isMatch) {
+                            if (!groups[loc.division]) groups[loc.division] = [];
+                            groups[loc.division].push(loc);
+                        }
+                    });
+                    
+                    // Sort by the custom divisionRank mapped object
+                    return Object.keys(groups).sort((a, b) => {
+                        const rankA = divisionRank[a] || 99; // Default to 99 if rank is not set
+                        const rankB = divisionRank[b] || 99;
+                        if (rankA !== rankB) return rankA - rankB;
+                        // Fallback to alphabetical if both have same rank or undefined
+                        return a.localeCompare(b);
+                    }).map(div => ({
+                        name: div,
+                        areas: groups[div]
+                    }));
+                },
+
+                get filteredCount() {
+                    return this.filteredDivisions.reduce((acc, div) => acc + div.areas.length, 0);
+                },
+
+                simulateGridEvent() {
+                    if (this.isMapAnimating) return; 
+
+                    // Dynamic Grid Logic: Keep online areas between 5% and 10%
+                    const total = this.locations.length;
+                    const onlineCount = this.locations.filter(l => l.status).length;
+                    const onlineRatio = onlineCount / total;
+
+                    let bringPowerBack = false;
+                    if (onlineRatio < 0.05) {
+                        // Grid is too dead (< 5%), bring some power back
+                        bringPowerBack = true;
+                    } else if (onlineRatio > 0.10) {
+                        // Grid has too much power (> 10%), force load shedding
+                        bringPowerBack = false;
+                    } else {
+                        // In the sweet spot (5-10%), usually shed load, but occasionally give power
+                        bringPowerBack = Math.random() > 0.85; 
+                    }
+                    
+                    const candidates = this.locations.filter(l => l.status !== bringPowerBack);
+                    if (candidates.length === 0) return;
+                    
+                    const targetIndex = Math.floor(Math.random() * candidates.length);
+                    const target = candidates[targetIndex];
+                    
+                    target.status = bringPowerBack;
+                    
+                    const marker = this.markersMap[target.id];
+                    if (marker) {
+                        marker.setStyle(this.getMarkerStyle(target.status));
+                        
+                        const statusText = target.status 
+                            ? '<span style="color:#10b981;font-weight:600;">বিদ্যুৎ আছে</span>' 
+                            : '<span style="color:#ef4444;font-weight:600;">লোডশেডিং</span>';
+                            
+                        marker.setPopupContent(`
+                            <div style="font-family:'Noto Sans Bengali', sans-serif;">
+                                <strong style="font-size:14px;">${target.name}</strong><br>
+                                <span style="color:var(--tw-colors-neutral-500); font-size:12px;">${target.district}, ${target.division}</span><br>
+                                <div style="margin-top:4px;">অবস্থা: ${statusText}</div>
+                            </div>
+                        `);
+                    }
+                    
+                    this.addLog(target, target.status);
+                },
+
+                addLog(location, newStatus) {
+                    const now = new Date();
+                    let hours = now.getHours();
+                    const minutes = now.getMinutes().toString().padStart(2, '0');
+                    const ampm = hours >= 12 ? 'PM' : 'AM';
+                    hours = hours % 12; hours = hours ? hours : 12; 
+                    
+                    const timeString = `${hours}:${minutes} ${ampm}`;
+                    
+                    let messageTemplate = '';
+                    if (newStatus) {
+                        messageTemplate = `<span class="font-semibold text-neutral-900 dark:text-neutral-100">${location.name}</span>, ${location.district}-এ কারেন্ট এসেছে।`;
+                    } else {
+                        messageTemplate = `<span class="font-semibold text-neutral-900 dark:text-neutral-100">${location.name}</span>, ${location.district}-এ লোডশেডিং শুরু হলো।`;
+                    }
+
+                    this.liveFeed.unshift({
+                        id: this.logIdCounter++,
+                        message: messageTemplate,
+                        time: timeString,
+                        status: newStatus
+                    });
+
+                    if (this.liveFeed.length > 30) this.liveFeed.pop();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
